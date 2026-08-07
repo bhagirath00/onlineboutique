@@ -83,7 +83,7 @@ class ProofCollector:
                                                           'http://prometheus-server.nexus-system:80')
         self.experiment_id = experiment_id
         self.baseline = baseline
-        self.results_dir = Path('./research/results')
+        self.results_dir = Path('./research/results_multistep')
         self.results_dir.mkdir(parents=True, exist_ok=True)
         
         # Collected metrics
@@ -128,6 +128,7 @@ class ProofCollector:
                 self._collect_scheduling_metrics()
                 self._collect_colocation_metrics()
                 self._collect_spike_activation()
+                self._collect_apiserver_metrics()
                 
                 # Sleep until next sample
                 elapsed = time.time() - current_time
@@ -147,13 +148,23 @@ class ProofCollector:
         KEY CLAIM: NEXUS overhead < 5ms CPU during idle
         """
         try:
-            # Query scheduler CPU usage
-            promql = 'rate(scheduler_cpu_seconds_total[1m])'
+            # Match the target scheduler pod pattern dynamically based on self.baseline
+            pod_pattern = "nexus-scheduler.*"
+            if "volcano" in self.baseline.lower():
+                pod_pattern = "volcano-scheduler.*"
+            elif "yunikorn" in self.baseline.lower():
+                pod_pattern = "yunikorn-scheduler.*"
+            elif "cosched" in self.baseline.lower() or "diktyo" in self.baseline.lower():
+                pod_pattern = "scheduler-plugins.*"
+            elif "default" in self.baseline.lower():
+                pod_pattern = "kube-scheduler.*"
+
+            # Query scheduler CPU usage using standard EKS cAdvisor metric (cores to ms conversion)
+            promql = f"sum(rate(container_cpu_usage_seconds_total{{pod=~'{pod_pattern}', container!=''}}[2m])) * 1000"
             results = self._query_prometheus(promql)
             
             if results and len(results) > 0:
-                cpu_value = float(results[0]['value'][1])  # Convert to ms
-                cpu_ms = cpu_value * 1000
+                cpu_ms = float(results[0]['value'][1])
                 
                 metric = ProofMetric(
                     timestamp=time.time(),
@@ -165,8 +176,8 @@ class ProofCollector:
                 )
                 self.metrics.append(metric)
             
-            # Query scheduler memory
-            promql = 'scheduler_memory_mb'
+            # Query scheduler memory in MB
+            promql = f"sum(container_memory_working_set_bytes{{pod=~'{pod_pattern}', container!=''}}) / 1024 / 1024"
             results = self._query_prometheus(promql)
             
             if results and len(results) > 0:
@@ -195,12 +206,12 @@ class ProofCollector:
             percentiles = [(0.50, 'p50'), (0.95, 'p95'), (0.99, 'p99')]
             
             for percentile, label in percentiles:
-                promql = f'histogram_quantile({percentile}, rate(request_duration_seconds_bucket[1m]))'
+                # Query Istio request duration milliseconds across the default namespace
+                promql = f"histogram_quantile({percentile}, sum(rate(istio_request_duration_milliseconds_bucket{{reporter='destination', namespace='default'}}[2m])) by (le))"
                 results = self._query_prometheus(promql)
                 
                 if results and len(results) > 0:
-                    latency_seconds = float(results[0]['value'][1])
-                    latency_ms = latency_seconds * 1000
+                    latency_ms = float(results[0]['value'][1])
                     
                     metric = ProofMetric(
                         timestamp=time.time(),
@@ -221,8 +232,8 @@ class ProofCollector:
         KEY CLAIM: NEXUS schedules efficiently (low pending time)
         """
         try:
-            # Pending pods count
-            promql = 'kubernetes_pods_pending_total'
+            # Pending pods count in default namespace via kube-state-metrics
+            promql = 'sum(kube_pod_status_phase{phase="Pending", namespace="default"})'
             results = self._query_prometheus(promql)
             
             if results and len(results) > 0:
@@ -231,15 +242,15 @@ class ProofCollector:
                 metric = ProofMetric(
                     timestamp=time.time(),
                     metric_name='pending_pods_count',
-                    value=pending,
+                    value=float(pending),
                     unit='count',
                     baseline=self.baseline,
                     experiment_id=self.experiment_id
                 )
                 self.metrics.append(metric)
             
-            # Scheduling rate
-            promql = 'rate(pods_scheduled_total[1m])'
+            # Scheduling rate (total scheduling attempts/sec)
+            promql = 'sum(rate(scheduler_pod_scheduling_attempts_total[2m]))'
             results = self._query_prometheus(promql)
             
             if results and len(results) > 0:
@@ -264,13 +275,12 @@ class ProofCollector:
         KEY CLAIM: NEXUS achieves 85%+ co-location during spike
         """
         try:
-            # Query pod placement distribution
-            promql = 'pod_placement_cross_node_ratio'
+            # Query standard co-location ratio using EKS pod info targeting default critical path
+            promql = '1 - (count(count by (node)(kube_pod_info{namespace="default", pod=~"(frontend|checkoutservice|paymentservice|currencyservice).*"})) / count(kube_pod_info{namespace="default", pod=~"(frontend|checkoutservice|paymentservice|currencyservice).*"}))'
             results = self._query_prometheus(promql)
             
             if results and len(results) > 0:
-                cross_node_ratio = float(results[0]['value'][1])
-                colocation_pct = (1 - cross_node_ratio) * 100  # Inverse
+                colocation_pct = float(results[0]['value'][1]) * 100
                 
                 metric = ProofMetric(
                     timestamp=time.time(),
@@ -351,7 +361,7 @@ class ProofCollector:
                 self.metrics.append(metric)
             
             # Activation latency (ms)
-            promql = 'histogram_quantile(0.99, rate(nexus_activation_latency_ms_bucket[1m]))'
+            promql = 'histogram_quantile(0.99, rate(nexus_activation_latency_ms_bucket[2m]))'
             results = self._query_prometheus(promql)
             
             if results and len(results) > 0:
@@ -369,6 +379,33 @@ class ProofCollector:
         
         except Exception as e:
             print(f"  [Warning] NEXUS spike activation collection failed: {e}")
+    
+    def _collect_apiserver_metrics(self) -> None:
+        """
+        Collect API Server Requests/sec
+        KEY CLAIM: NEXUS reduces control-plane pressure
+        """
+        try:
+            promql = 'sum(rate(apiserver_request_total[2m]))'
+            results = self._query_prometheus(promql)
+            if not results or len(results) == 0:
+                # Fallback to older metric name
+                promql = 'sum(rate(apiserver_request_count[2m]))'
+                results = self._query_prometheus(promql)
+            
+            if results and len(results) > 0:
+                rps = float(results[0]['value'][1])
+                metric = ProofMetric(
+                    timestamp=time.time(),
+                    metric_name='apiserver_requests_per_sec',
+                    value=rps,
+                    unit='requests/sec',
+                    baseline=self.baseline,
+                    experiment_id=self.experiment_id
+                )
+                self.metrics.append(metric)
+        except Exception as e:
+            print(f"  [Warning] API server metrics collection failed: {e}")
     
     def _query_prometheus(self, promql: str) -> Optional[List[Dict]]:
         """Query Prometheus and return results"""

@@ -313,7 +313,7 @@ func (s *NEXUSScheduler) spikeWatcher(ctx context.Context) {
 // getPendingPodCount polls the Kubernetes API for pods currently in Pending state.
 // This is critical for the spike detector fallback mechanism when Prometheus lacks metric data.
 func (s *NEXUSScheduler) getPendingPodCount(ctx context.Context) int {
-	pods, err := s.clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+	pods, err := s.clientset.CoreV1().Pods("default").List(ctx, metav1.ListOptions{
 		FieldSelector: "status.phase=Pending",
 	})
 	if err != nil {
@@ -323,9 +323,25 @@ func (s *NEXUSScheduler) getPendingPodCount(ctx context.Context) int {
 	return len(pods.Items)
 }
 
-// checkForSpike evaluates spike conditions and transitions state
+// checkForSpike evaluates spike conditions and transitions state.
+// When IDLE: activates NEXUS on spike detection.
+// When ACTIVE: refreshes lastSpikeTime so a sustained/second wave doesn't
+// cause premature dissolution due to the cooldown window expiring.
 func (s *NEXUSScheduler) checkForSpike(ctx context.Context) {
 	currentState := s.GetState()
+
+	if currentState == StateActive {
+		// Refresh the cooldown window if spike signal is still present.
+		// This prevents premature dissolution during multi-wave traffic events.
+		pendingCount := s.getPendingPodCount(ctx)
+		if s.spikeDetector.Detect(pendingCount) {
+			s.stateMu.Lock()
+			s.lastSpikeTime = time.Now()
+			s.stateMu.Unlock()
+			klog.V(2).Info("Spike watcher: spike still active, cooldown window refreshed")
+		}
+		return
+	}
 
 	if currentState == StateIdle {
 		// Calculate true pending pod count from Kubernetes API to ensure reliable fallback detection
@@ -519,8 +535,12 @@ func main() {
 	// Start cooldown checker
 	go scheduler.cooldownChecker(ctx)
 
-	// Start standalone scheduling loop (unblocks Pending pods on EKS)
-	go scheduler.standaloneSchedulerLoop(ctx)
+	// Start standalone scheduling loop (unblocks Pending pods on EKS if enabled)
+	if os.Getenv("STANDALONE_SCHEDULER_ENABLED") != "false" {
+		go scheduler.standaloneSchedulerLoop(ctx)
+	} else {
+		klog.Info("Standalone scheduling loop is DISABLED (running in pure Extender mode)")
+	}
 
 	// Start HTTP server
 	klog.Infof("Starting NEXUS Extender HTTP server on %s", metricsPort)

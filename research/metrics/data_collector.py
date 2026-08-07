@@ -181,7 +181,7 @@ class DataCollector:
         self.prometheus_url = prometheus_url or os.getenv('PROMETHEUS_URL', 
                                                            'http://prometheus.nexus-system:9090')
         self.prom_query = PrometheusMetricsQuery(self.prometheus_url)
-        self.results_dir = Path('./research/results')
+        self.results_dir = Path('./research/results_multistep')
         self.results_dir.mkdir(parents=True, exist_ok=True)
     
     def collect_experiment_metrics(self, experiment_id: str, baseline: str, 

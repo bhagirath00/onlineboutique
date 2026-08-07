@@ -24,9 +24,9 @@ except ImportError:
     sys.exit(1)
 
 
-# Prometheus queries for scheduler research
+# Prometheus queries for scheduler research (Control Plane Load Focus)
 METRICS_QUERIES = {
-    # Scheduler Performance
+    # Scheduler Performance & Latency
     "scheduler_scheduling_latency_p99": 'histogram_quantile(0.99, sum(rate(scheduler_scheduling_duration_seconds_bucket[5m])) by (le))',
     "scheduler_scheduling_latency_p95": 'histogram_quantile(0.95, sum(rate(scheduler_scheduling_duration_seconds_bucket[5m])) by (le))',
     "scheduler_scheduling_latency_p50": 'histogram_quantile(0.50, sum(rate(scheduler_scheduling_duration_seconds_bucket[5m])) by (le))',
@@ -35,30 +35,41 @@ METRICS_QUERIES = {
     "scheduler_attempts_error": 'sum(scheduler_schedule_attempts_total{result="error"})',
     "scheduler_attempts_unschedulable": 'sum(scheduler_schedule_attempts_total{result="unschedulable"})',
     
-    # Control-Plane Overhead
+    # Kube-Scheduler Control-Plane Overhead
     "scheduler_cpu_usage_millicores": 'sum(rate(container_cpu_usage_seconds_total{container="kube-scheduler"}[5m])) * 1000',
     "scheduler_memory_mb": 'sum(container_memory_working_set_bytes{container="kube-scheduler"}) / 1024 / 1024',
     
-    # API Server
+    # API Server Control-Plane Overhead
     "apiserver_request_rate": 'sum(rate(apiserver_request_total[5m]))',
     "apiserver_request_latency_p99": 'histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket[5m])) by (le))',
     "apiserver_cpu_usage_millicores": 'sum(rate(container_cpu_usage_seconds_total{container="kube-apiserver"}[5m])) * 1000',
     "apiserver_memory_mb": 'sum(container_memory_working_set_bytes{container="kube-apiserver"}) / 1024 / 1024',
     
-    # etcd
+    # etcd Control-Plane Overhead
+    "etcd_cpu_usage_millicores": 'sum(rate(container_cpu_usage_seconds_total{container="etcd"}[5m])) * 1000',
+    "etcd_memory_mb": 'sum(container_memory_working_set_bytes{container="etcd"}) / 1024 / 1024',
     "etcd_request_rate": 'sum(rate(etcd_request_duration_seconds_count[5m]))',
     "etcd_db_size_mb": 'etcd_mvcc_db_total_size_in_bytes / 1024 / 1024',
     
-    # Node Resources
+    # Controller Manager Control-Plane Overhead
+    "controller_manager_cpu_millicores": 'sum(rate(container_cpu_usage_seconds_total{container="kube-controller-manager"}[5m])) * 1000',
+    "controller_manager_memory_mb": 'sum(container_memory_working_set_bytes{container="kube-controller-manager"}) / 1024 / 1024',
+    
+    # Total Control-Plane Aggregated Consumption
+    "control_plane_total_cpu_millicores": 'sum(rate(container_cpu_usage_seconds_total{container=~"kube-scheduler|kube-apiserver|etcd|kube-controller-manager"}[5m])) * 1000',
+    "control_plane_total_memory_mb": 'sum(container_memory_working_set_bytes{container=~"kube-scheduler|kube-apiserver|etcd|kube-controller-manager"}) / 1024 / 1024',
+    
+    # Node Cluster Utilization
     "node_cpu_utilization_percent": 'avg(100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100))',
     "node_memory_utilization_percent": 'avg((1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)',
     
-    # Pod Counts
+    # Pod States & Failure Rates
     "total_running_pods": 'count(kube_pod_status_phase{phase="Running"})',
     "total_pending_pods": 'count(kube_pod_status_phase{phase="Pending"})',
+    "total_failed_pods": 'count(kube_pod_status_phase{phase="Failed"})',
 }
 
-# Volcano-specific metrics (if Volcano is installed)
+# Volcano-specific metrics
 VOLCANO_QUERIES = {
     "volcano_scheduler_cpu_millicores": 'sum(rate(container_cpu_usage_seconds_total{container="volcano-scheduler"}[5m])) * 1000',
     "volcano_scheduler_memory_mb": 'sum(container_memory_working_set_bytes{container="volcano-scheduler"}) / 1024 / 1024',
@@ -66,7 +77,7 @@ VOLCANO_QUERIES = {
     "volcano_controller_memory_mb": 'sum(container_memory_working_set_bytes{container="volcano-controllers"}) / 1024 / 1024',
 }
 
-# NEXUS-specific metrics (if NEXUS is installed)
+# NEXUS-specific metrics
 NEXUS_QUERIES = {
     "nexus_scheduler_state": 'nexus_scheduler_state',
     "nexus_pending_pods": 'nexus_pending_pods',
@@ -75,6 +86,7 @@ NEXUS_QUERIES = {
     "nexus_scheduler_cpu_millicores": 'sum(rate(container_cpu_usage_seconds_total{container="nexus-scheduler"}[5m])) * 1000',
     "nexus_scheduler_memory_mb": 'sum(container_memory_working_set_bytes{container="nexus-scheduler"}) / 1024 / 1024',
 }
+
 
 
 class PrometheusClient:

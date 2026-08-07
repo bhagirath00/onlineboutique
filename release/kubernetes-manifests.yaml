@@ -84,6 +84,8 @@ spec:
     metadata:
       labels:
         app: checkoutservice
+      annotations:
+        nexus.io/depends-on: "paymentservice,shippingservice,cartservice"
     spec:
       serviceAccountName: default
       containers:
@@ -215,6 +217,7 @@ spec:
         app: frontend
       annotations:
         sidecar.istio.io/rewriteAppHTTPProbers: "true"
+        nexus.io/depends-on: "checkoutservice"
     spec:
       serviceAccountName: default
       containers:
@@ -313,6 +316,8 @@ spec:
     metadata:
       labels:
         app: paymentservice
+      annotations:
+        nexus.io/depends-on: "currencyservice"
     spec:
       serviceAccountName: default
       terminationGracePeriodSeconds: 5
@@ -766,6 +771,13 @@ spec:
         target:
           type: Utilization
           averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 2
 
 ---
 apiVersion: autoscaling/v2
@@ -786,6 +798,13 @@ spec:
         target:
           type: Utilization
           averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 2
 
 ---
 apiVersion: autoscaling/v2
@@ -806,6 +825,13 @@ spec:
         target:
           type: Utilization
           averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 2
 
 ---
 apiVersion: autoscaling/v2
@@ -826,3 +852,10 @@ spec:
         target:
           type: Utilization
           averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 2

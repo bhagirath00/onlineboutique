@@ -20,6 +20,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -143,6 +144,9 @@ func (gm *GangManager) FormGangs(groups []RuntimeGroup) {
 
 // GetGangForService returns the gang a service belongs to (if any)
 func (gm *GangManager) GetGangForService(serviceName string) *Gang {
+	if os.Getenv("NEXUS_DISABLE_GANG") == "true" {
+		return nil
+	}
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 
