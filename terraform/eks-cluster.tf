@@ -3,7 +3,7 @@ module "eks" {
   version = "~> 20.8.2"
 
   cluster_name    = "nexus-cluster"
-  cluster_version = "1.28"
+  cluster_version = "1.30"
 
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = true
@@ -15,8 +15,8 @@ module "eks" {
     region_a_high_cpu = {
       instance_types = ["t3.small"]
       ami_type       = "AL2_x86_64"
-      min_size     = 1
-      max_size     = 4
+      min_size     = 3
+      max_size     = 5
       desired_size = 3
       labels = {
         region   = "region-a"
@@ -26,9 +26,9 @@ module "eks" {
     region_b_standard = {
       instance_types = ["t3.small"]
       ami_type       = "AL2_x86_64"
-      min_size     = 1
-      max_size     = 4
-      desired_size = 3
+      min_size     = 2
+      max_size     = 5
+      desired_size = 2
       labels = {
         region   = "region-b"
         cpu-tier = "standard"

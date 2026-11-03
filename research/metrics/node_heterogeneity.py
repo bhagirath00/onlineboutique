@@ -118,7 +118,7 @@ class NodeHeterogeneityManager:
             config.load_kube_config()
         
         self.v1 = client.CoreV1Api()
-        self.results_dir = Path('./research/results')
+        self.results_dir = Path('./research/results_multistep')
         self.results_dir.mkdir(parents=True, exist_ok=True)
     
     def label_nodes_by_topology(self) -> Dict[str, Node]:

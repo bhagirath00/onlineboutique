@@ -17,7 +17,7 @@ package main
 
 import (
 	"context"
-
+	"os"
 
 	v1 "k8s.io/api/core/v1"
 
@@ -71,6 +71,9 @@ func (ns *NodeScorer) scoreNode(ctx context.Context, pod *v1.Pod, node *v1.Node,
 // calculateLocalityScore scores based on memory-cached gang member counts.
 // This is EVENT-DRIVEN and LIGHTWEIGHT (no API calls).
 func (ns *NodeScorer) calculateLocalityScore(node *v1.Node, gang *Gang) int64 {
+	if os.Getenv("NEXUS_DISABLE_LOCALITY") == "true" {
+		return 0
+	}
 	if gang == nil {
 		return 0
 	}

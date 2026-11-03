@@ -197,9 +197,10 @@ func (dg *DependencyGraph) GetGroupMembers(pod *v1.Pod) []string {
 	return group.Services
 }
 
-// Clear frees all in-memory graph data
-// Called when spike window ends and gang is dissolved
+// Clear frees all in-memory graph data.
+// Called when spike window ends and gang is dissolved.
 func (dg *DependencyGraph) Clear() {
+	dg.nodes = make(map[string][]string)
 	dg.groups = make([]RuntimeGroup, 0)
 	dg.built = false
 	klog.Info("Dependency graph cleared — all in-memory DAG data freed")

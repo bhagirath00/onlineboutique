@@ -17,7 +17,6 @@ Without a spike event, NEXUS remains completely dormant.
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,7 +26,6 @@ import (
 	"strconv"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
@@ -59,10 +57,10 @@ type PrometheusResponse struct {
 func NewSpikeDetector(clientset *kubernetes.Clientset) *SpikeDetector {
 	prometheusURL := os.Getenv("PROMETHEUS_URL")
 	if prometheusURL == "" {
-		prometheusURL = "http://prometheus-server.nexus-system.svc.cluster.local:80"
+		prometheusURL = "http://prometheus-server.monitoring.svc.cluster.local:80"
 	}
 
-	qpsThreshold := 100.0
+	qpsThreshold := 90.0
 	if qpsStr := os.Getenv("SPIKE_QPS_THRESHOLD"); qpsStr != "" {
 		if val, err := strconv.ParseFloat(qpsStr, 64); err == nil {
 			qpsThreshold = val
@@ -86,12 +84,22 @@ func NewSpikeDetector(clientset *kubernetes.Clientset) *SpikeDetector {
 	klog.Infof("Spike detector thresholds: QPS=%.0f, ErrorRate=%.0f, p95Latency=%.0fms",
 		qpsThreshold, errorThreshold, p95LatencyThreshold)
 
+	// Default pending-pod fallback threshold is 10 to avoid false-positive
+	// activations during normal pod churn or scheduler startup.
+	// Override with SPIKE_FALLBACK_THRESHOLD env var.
+	fallbackThreshold := 10
+	if fbStr := os.Getenv("SPIKE_FALLBACK_THRESHOLD"); fbStr != "" {
+		if val, err := strconv.Atoi(fbStr); err == nil {
+			fallbackThreshold = val
+		}
+	}
+
 	return &SpikeDetector{
 		prometheusURL:       prometheusURL,
 		qpsThreshold:        qpsThreshold,
 		errorThreshold:      errorThreshold,
 		p95LatencyThreshold: p95LatencyThreshold,
-		fallbackThreshold:   1,
+		fallbackThreshold:   fallbackThreshold,
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -99,60 +107,75 @@ func NewSpikeDetector(clientset *kubernetes.Clientset) *SpikeDetector {
 	}
 }
 
-// Detect checks if a spike is currently happening
-// Implements Algorithm 1: Traffic Spike Detection
-// Returns true if ANY spike indicator exceeds its threshold
+// Detect checks if a spike is currently happening.
+// Implements Algorithm 1: Traffic Spike Detection.
+//
+// Detection order (intentional):
+//   1. Prometheus QPS       — primary signal
+//   2. Prometheus ErrorRate — secondary signal
+//   3. Prometheus p95       — latency degradation signal
+//   4. HPA scale events     — infrastructure-level signal
+//   5. Pending pod count    — LAST RESORT (only when Prometheus unreachable)
+//
+// The pending-pod check is intentionally last so that normal pod churn
+// (e.g., scheduler startup binding its own pods) never causes a false
+// positive activation.
 func (sd *SpikeDetector) Detect(pendingPodCount int) bool {
-	// Check 5: Pending Pods (from K8s API directly)
-	if pendingPodCount >= sd.fallbackThreshold {
-		klog.Infof("SPIKE DETECTED: Pending pods %d >= threshold %d", pendingPodCount, sd.fallbackThreshold)
-		return true
-	}
+	// --- Prometheus-based checks first ---
+	if sd.isPrometheusReachable() {
+		// Check 1: QPS (Queries Per Second)
+		qps, err := sd.queryQPS()
+		if err != nil {
+			klog.Warningf("Failed to query QPS: %v", err)
+		} else if qps >= sd.qpsThreshold {
+			klog.Infof("SPIKE DETECTED: QPS %.2f >= threshold %.2f", qps, sd.qpsThreshold)
+			return true
+		}
 
-	// Fallback: if Prometheus is unreachable, we already checked pending pods above
-	if !sd.isPrometheusReachable() {
-		klog.V(2).Info("Prometheus unreachable, no further metrics to check")
+		// Check 2: Error Rate (5xx errors)
+		errorRate, err := sd.queryErrorRate()
+		if err != nil {
+			klog.Warningf("Failed to query error rate: %v", err)
+		} else if errorRate > sd.errorThreshold {
+			klog.Infof("SPIKE DETECTED: Error rate %.2f > threshold %.2f", errorRate, sd.errorThreshold)
+			return true
+		}
+
+		// Check 3: p95 Latency (professional requirement 2A)
+		p95, err := sd.queryP95Latency()
+		if err != nil {
+			klog.Warningf("Failed to query p95 latency: %v", err)
+		} else if p95 > sd.p95LatencyThreshold {
+			klog.Infof("SPIKE DETECTED: p95 latency %.2fms > threshold %.2fms", p95, sd.p95LatencyThreshold)
+			return true
+		}
+
+		// Check 4: HPA scale-up events
+		hpaActive, err := sd.checkHPAActivity()
+		if err != nil {
+			klog.Warningf("Failed to check HPA activity: %v", err)
+		} else if hpaActive {
+			klog.Info("SPIKE DETECTED: HPA scale-up event detected")
+			return true
+		}
+
+		// All Prometheus checks passed — no spike
+		klog.V(2).Infof("No spike detected via Prometheus (QPS/ErrorRate/p95/HPA all within thresholds)")
 		return false
 	}
 
-	// Check 1: QPS (Queries Per Second)
-	qps, err := sd.queryQPS()
-	if err != nil {
-		klog.Warningf("Failed to query QPS: %v", err)
-	} else if qps > sd.qpsThreshold {
-		klog.Infof("SPIKE DETECTED: QPS %.2f > threshold %.2f", qps, sd.qpsThreshold)
+	// --- Prometheus unreachable: use pending-pod count as last-resort fallback ---
+	// Only triggers when count is significantly above the conservative threshold
+	// to avoid reacting to transient pod churn during scheduler startup.
+	klog.V(2).Info("Prometheus unreachable — using pending-pod fallback check")
+	if pendingPodCount >= sd.fallbackThreshold {
+		klog.Infof("SPIKE DETECTED (fallback): Pending pods %d >= threshold %d",
+			pendingPodCount, sd.fallbackThreshold)
 		return true
 	}
 
-	// Check 2: Error Rate (5xx errors)
-	errorRate, err := sd.queryErrorRate()
-	if err != nil {
-		klog.Warningf("Failed to query error rate: %v", err)
-	} else if errorRate > sd.errorThreshold {
-		klog.Infof("SPIKE DETECTED: Error rate %.2f > threshold %.2f", errorRate, sd.errorThreshold)
-		return true
-	}
-
-	// Check 3: p95 Latency (professional requirement 2A)
-	p95, err := sd.queryP95Latency()
-	if err != nil {
-		klog.Warningf("Failed to query p95 latency: %v", err)
-	} else if p95 > sd.p95LatencyThreshold {
-		klog.Infof("SPIKE DETECTED: p95 latency %.2fms > threshold %.2fms", p95, sd.p95LatencyThreshold)
-		return true
-	}
-
-	// Check 4: HPA scale-up events
-	hpaActive, err := sd.checkHPAActivity()
-	if err != nil {
-		klog.Warningf("Failed to check HPA activity: %v", err)
-	} else if hpaActive {
-		klog.Info("SPIKE DETECTED: HPA scale-up event detected")
-		return true
-	}
-
-	// No spike detected
-	klog.V(2).Infof("No spike detected (QPS: %.2f, ErrorRate: %.2f, p95: %.2fms)", qps, errorRate, p95)
+	klog.V(2).Infof("No spike detected (fallback): Pending pods %d < threshold %d",
+		pendingPodCount, sd.fallbackThreshold)
 	return false
 }
 
@@ -167,36 +190,109 @@ func (sd *SpikeDetector) isPrometheusReachable() bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// queryQPS retrieves the current request rate across all services in the default namespace
+// queryQPS retrieves the current request rate
 func (sd *SpikeDetector) queryQPS() (float64, error) {
-	// Query total requests per second for the default namespace using Istio metrics
-	// This provides a more accurate signal for traffic spikes than CPU usage
-	query := `sum(rate(istio_requests_total{reporter="destination", namespace="default"}[1m]))`
-	val, err := sd.queryPrometheus(query)
-	if err != nil {
-		klog.Warningf("NEXUS-SPIKE: Failed to query Prometheus for QPS: %v", err)
-		return 0, err
+	// 1. PRIMARY: Query Locust stats directly from all candidate cluster URLs
+	locustURLs := []string{
+		"http://loadgenerator.default.svc.cluster.local:8089/stats/requests",
+		"http://locust.nexus-system.svc.cluster.local:8089/stats/requests",
+		"http://localhost:8089/stats/requests",
 	}
-	return val, nil
+
+	for _, locustURL := range locustURLs {
+		resp, err := sd.client.Get(locustURL)
+		if err == nil {
+			defer resp.Body.Close()
+			var stats struct {
+				Stats []struct {
+					Name       string  `json:"name"`
+					CurrentRps float64 `json:"current_rps"`
+				} `json:"stats"`
+			}
+			if decodeErr := json.NewDecoder(resp.Body).Decode(&stats); decodeErr == nil {
+				for _, s := range stats.Stats {
+					if s.Name == "Total" && s.CurrentRps > 0 {
+						klog.Infof("NEXUS-QPS: %.2f RPS from Locust (%s)", s.CurrentRps, locustURL)
+						return s.CurrentRps, nil
+					}
+				}
+			}
+		}
+	}
+
+	// 2. FALLBACK: Prometheus CPU proxy for default namespace frontend pods
+	query := `sum(rate(container_cpu_usage_seconds_total{namespace="default",pod=~"frontend-.*"}[1m])) * 400`
+	val, err := sd.queryPrometheus(query)
+	if err == nil && val > 0.01 {
+		klog.Infof("NEXUS-QPS-FALLBACK: %.2f from Prometheus CPU proxy", val)
+		return val, nil
+	}
+
+	return 0, nil
 }
 
 // queryErrorRate retrieves the current error rate
 func (sd *SpikeDetector) queryErrorRate() (float64, error) {
-	// If app metrics are missing, we skip error rate and rely on QPS and Pending Pods
-	query := `sum(rate(istio_requests_total{response_code=~"5..", reporter="destination"}[1m]))`
-	return sd.queryPrometheus(query)
+	query := `sum(rate(apiserver_request_total{code=~"5.."}[1m]))`
+	val, err := sd.queryPrometheus(query)
+	if err == nil {
+		return val, nil
+	}
+	return 0, nil
 }
 
 // queryP95Latency retrieves the p95 request latency in milliseconds
 func (sd *SpikeDetector) queryP95Latency() (float64, error) {
-	// p95 latency covering both gRPC and HTTP frontend traffic
-	query := `histogram_quantile(0.95, sum(rate(istio_request_duration_milliseconds_bucket{reporter="destination"}[1m])) by (le)) / 1000`
-	return sd.queryPrometheus(query)
+	// 1. PRIMARY: Query Locust stats directly
+	locustURLs := []string{
+		"http://loadgenerator.default.svc.cluster.local:8089/stats/requests",
+		"http://locust.nexus-system.svc.cluster.local:8089/stats/requests",
+		"http://localhost:8089/stats/requests",
+	}
+
+	for _, locustURL := range locustURLs {
+		resp, err := sd.client.Get(locustURL)
+		if err == nil {
+			defer resp.Body.Close()
+			var stats struct {
+				Stats []struct {
+					Name                     string  `json:"name"`
+					ResponseTimePercentile95 float64 `json:"response_time_percentile_95"`
+					AvgResponseTime          float64 `json:"avg_response_time"`
+				} `json:"stats"`
+			}
+			if decodeErr := json.NewDecoder(resp.Body).Decode(&stats); decodeErr == nil {
+				for _, s := range stats.Stats {
+					if s.Name == "Total" {
+						v := s.ResponseTimePercentile95
+						if v == 0 {
+							v = s.AvgResponseTime * 1.5
+						}
+						if v > 0 {
+							klog.Infof("NEXUS-P95: %.2fms from Locust (%s)", v, locustURL)
+							return v, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. FALLBACK: Prometheus API Server Latency P95
+	query := `histogram_quantile(0.95, sum(rate(apiserver_request_duration_seconds_bucket[1m])) by (le)) * 1000`
+	val, err := sd.queryPrometheus(query)
+	if err == nil && val > 0.01 {
+		klog.Infof("NEXUS-P95-FALLBACK: %.2fms from Prometheus", val)
+		return val, nil
+	}
+
+	return 0, nil
 }
+
 
 // checkHPAActivity checks if any HPA has recently scaled up
 func (sd *SpikeDetector) checkHPAActivity() (bool, error) {
-	query := "increase(kube_horizontalpodautoscaler_status_current_replicas[2m])"
+	query := "increase(kube_horizontalpodautoscaler_status_current_replicas[1m])"
 	value, err := sd.queryPrometheus(query)
 	if err != nil {
 		return false, err

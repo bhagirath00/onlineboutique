@@ -104,17 +104,17 @@ type NEXUSMetrics struct {
 	mu              sync.Mutex
 	spikeEvents     int64
 	gangsFormed     int64
-	gangsDisssolved int64
+	gangsDissolved  int64
 	filterCalls     int64
 	prioritizeCalls int64
 	stateChanges    int64
-	
+
 	// Research-specific quality counters
-	regionAPlacements   int64
-	highTierPlacements  int64
-	apiCallsAvoided     int64 // Proves Claim 3 (Low overhead)
-	
-	currentState    string
+	regionAPlacements  int64
+	highTierPlacements int64
+	apiCallsAvoided    int64 // Proves Claim 3 (Low overhead)
+
+	currentState string
 }
 
 // NewNEXUSMetrics initializes all research metrics
@@ -150,7 +150,7 @@ func (m *NEXUSMetrics) IncrementCounter(name string) {
 	case "gangs_formed":
 		m.gangsFormed++
 	case "gangs_dissolved":
-		m.gangsDisssolved++
+		m.gangsDissolved++
 	case "filter_calls":
 		m.filterCalls++
 	case "prioritize_calls":
@@ -198,13 +198,21 @@ func (m *NEXUSMetrics) WriteAllMetrics(w http.ResponseWriter) {
 	fmt.Fprintf(w, "# TYPE nexus_spike_events_total counter\n")
 	fmt.Fprintf(w, "nexus_spike_events_total %d\n", m.spikeEvents)
 
+	fmt.Fprintf(w, "# HELP nexus_filter_calls_total Total filter extender invocations\n")
+	fmt.Fprintf(w, "# TYPE nexus_filter_calls_total counter\n")
+	fmt.Fprintf(w, "nexus_filter_calls_total %d\n", m.filterCalls)
+
+	fmt.Fprintf(w, "# HELP nexus_prioritize_calls_total Total prioritize extender invocations\n")
+	fmt.Fprintf(w, "# TYPE nexus_prioritize_calls_total counter\n")
+	fmt.Fprintf(w, "nexus_prioritize_calls_total %d\n", m.prioritizeCalls)
+
 	fmt.Fprintf(w, "# HELP nexus_gangs_formed_total Total gangs formed\n")
 	fmt.Fprintf(w, "# TYPE nexus_gangs_formed_total counter\n")
 	fmt.Fprintf(w, "nexus_gangs_formed_total %d\n", m.gangsFormed)
 
 	fmt.Fprintf(w, "# HELP nexus_gangs_dissolved_total Total gangs dissolved\n")
 	fmt.Fprintf(w, "# TYPE nexus_gangs_dissolved_total counter\n")
-	fmt.Fprintf(w, "nexus_gangs_dissolved_total %d\n", m.gangsDisssolved)
+	fmt.Fprintf(w, "nexus_gangs_dissolved_total %d\n", m.gangsDissolved)
 
 	// Placement Quality Counters
 	fmt.Fprintf(w, "# HELP nexus_region_a_placement_total Total pods placed on Region-A nodes\n")
@@ -223,7 +231,6 @@ func (m *NEXUSMetrics) WriteAllMetrics(w http.ResponseWriter) {
 	fmt.Fprintf(w, "# TYPE nexus_state_changes_total counter\n")
 	fmt.Fprintf(w, "nexus_state_changes_total %d\n", m.stateChanges)
 }
-
 
 // formatFloat formats a float for Prometheus output
 func formatFloat(f float64) string {

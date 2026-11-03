@@ -1,0 +1,221 @@
+Assignment: Comparative Analysis of Control Plane Overhead Across Kubernetes Schedulers
+Objective
+The objective of this experiment is to quantitatively evaluate the control plane resource overhead introduced by different Kubernetes schedulers under the same workload conditions.
+Most research evaluates schedulers only based on application-level performance metrics such as latency, throughput, or scheduling time. However, schedulers themselves consume CPU and memory resources within the Kubernetes control plane. This experiment aims to compare these overheads and determine which scheduler is more lightweight and efficient.
+The expected outcome is a comparative study of the resource consumption of the default Kubernetes scheduler and several custom schedulers while handling an identical workload.
+________________________________________
+Experiment Setup
+Cluster Configuration
+Use the same Kubernetes cluster configuration throughout the experiment.
+•	Same Kubernetes version 
+•	Same number of nodes 
+•	Same node specifications 
+•	Same resource allocation 
+•	Same monitoring stack (Prometheus + Grafana) 
+•	Same Online Boutique deployment 
+•	Same HPA configuration (if used) 
+The cluster configuration must remain unchanged for every scheduler.
+________________________________________
+Schedulers to Evaluate
+Evaluate at least 5–6 schedulers, including:
+1.	Kubernetes Default Scheduler 
+2.	Volcano Scheduler 
+3.	Apache YuniKorn 
+4.	Coscheduling Plugin Scheduler (or another gang scheduler) 
+5.	One additional scheduler from the literature (if available) 
+6.	Our Custom Scheduler (NEXUS/Event-Driven Scheduler) 
+Each scheduler must be tested independently.
+Only one scheduler should be active during each experiment.
+________________________________________
+Workload
+Use the Google Online Boutique microservice application.
+Generate identical workloads using Locust.
+Suggested workload:
+•	200 concurrent users 
+•	300 concurrent users 
+Run each workload for 10–15 minutes.
+The same Locust script must be used for every scheduler.
+________________________________________
+Metrics to Collect
+1. Scheduler CPU Usage
+Measure the CPU consumed by the scheduler process throughout the experiment.
+Collect:
+•	Average CPU Usage 
+•	Peak CPU Usage 
+•	CPU Usage Timeline 
+Possible Prometheus metrics:
+•	process_cpu_seconds_total 
+•	container_cpu_usage_seconds_total 
+________________________________________
+2. Scheduler Memory Usage
+Measure scheduler memory consumption.
+Collect:
+•	Average Memory 
+•	Peak Memory 
+•	Memory Usage Timeline 
+Possible metrics:
+•	container_memory_working_set_bytes 
+•	process_resident_memory_bytes 
+________________________________________
+3. Kubernetes API Server Overhead
+Measure the additional load imposed on the API Server.
+Collect:
+•	CPU Usage 
+•	Memory Usage 
+Optional:
+•	API Request Rate 
+•	API Request Duration 
+Possible metrics:
+•	apiserver_request_total 
+•	container_cpu_usage_seconds_total 
+________________________________________
+4. etcd Resource Usage
+Measure
+•	CPU 
+•	Memory 
+Optional
+•	Request latency 
+________________________________________
+5. Controller Manager Usage
+Measure
+•	CPU 
+•	Memory 
+________________________________________
+6. Scheduling Metrics
+Collect scheduler-specific metrics such as:
+•	Scheduling attempts 
+•	Scheduling latency 
+•	Scheduling duration 
+Possible metrics:
+•	scheduler_schedule_attempts_total 
+•	scheduler_e2e_scheduling_duration_seconds 
+________________________________________
+7. Pod Scheduling Behaviour
+Record
+•	Number of scheduled pods 
+•	Pending pods 
+•	Scheduling failures 
+•	Scheduling retries 
+________________________________________
+8. Cluster Resource Usage
+Measure overall cluster utilization.
+Collect
+•	Total CPU utilization 
+•	Total Memory utilization 
+This will help identify whether increased scheduler overhead impacts overall cluster resource consumption.
+________________________________________
+Experimental Procedure
+For each scheduler, perform the following steps:
+Step 1
+Create a fresh cluster.
+________________________________________
+Step 2
+Deploy the scheduler.
+Verify that it is functioning correctly.
+________________________________________
+Step 3
+Deploy the Online Boutique application.
+Ensure all services are healthy.
+________________________________________
+Step 4
+Start Prometheus and Grafana monitoring.
+Verify that all required metrics are being collected.
+________________________________________
+Step 5
+Execute the Locust workload.
+Run
+•	200 concurrent users 
+•	300 concurrent users 
+Maintain the same duration for every scheduler.
+________________________________________
+Step 6
+During execution, collect all required metrics.
+________________________________________
+Step 7
+Export all Prometheus data.
+Also capture screenshots from Grafana dashboards where appropriate.
+________________________________________
+Step 8
+Remove the scheduler.
+Destroy the cluster.
+Repeat the experiment using the next scheduler.
+________________________________________
+Number of Experimental Runs
+Each experiment should be repeated at least five times.
+Calculate
+•	Mean 
+•	Standard Deviation 
+to improve statistical reliability.
+________________________________________
+Deliverables
+Prepare a report containing the following.
+1. Experimental Environment
+Describe
+•	Cluster configuration 
+•	Kubernetes version 
+•	Scheduler version 
+•	Node specifications 
+•	Monitoring tools 
+________________________________________
+2. Collected Raw Data
+Provide all collected values.
+Include exported Prometheus data if possible.
+________________________________________
+3. Comparative Tables
+Prepare comparison tables for:
+Scheduler CPU
+Scheduler	Avg CPU	Peak CPU
+________________________________________
+Scheduler Memory
+Scheduler	Avg Memory	Peak Memory
+________________________________________
+API Server
+| Scheduler | Avg CPU | Avg Memory |
+________________________________________
+etcd
+| Scheduler | Avg CPU | Avg Memory |
+________________________________________
+Controller Manager
+| Scheduler | Avg CPU | Avg Memory |
+________________________________________
+Scheduling Metrics
+| Scheduler | Scheduling Attempts | Avg Scheduling Latency |
+________________________________________
+Required Graphs
+Prepare the following graphs.
+1.	Scheduler CPU Usage Comparison 
+2.	Scheduler Memory Usage Comparison 
+3.	API Server CPU Comparison 
+4.	API Server Memory Comparison 
+5.	etcd CPU Comparison 
+6.	etcd Memory Comparison 
+7.	Controller Manager CPU Comparison 
+8.	Controller Manager Memory Comparison 
+9.	Scheduling Latency Comparison 
+10.	Scheduling Attempts Comparison 
+11.	Total Control Plane CPU Consumption 
+12.	Total Control Plane Memory Consumption 
+________________________________________
+Comparative Analysis
+After completing all experiments, perform a detailed comparative analysis addressing the following questions:
+1.	Which scheduler consumed the least CPU resources? 
+2.	Which scheduler consumed the least memory? 
+3.	Which scheduler imposed the highest load on the Kubernetes API Server? 
+4.	Which scheduler generated the highest control-plane overhead? 
+5.	Did any scheduler significantly increase etcd or Controller Manager resource utilization? 
+6.	How did the scheduling latency vary across schedulers? 
+7.	Is there a trade-off between scheduler complexity and control-plane resource consumption? 
+8.	Based on the experimental results, which scheduler appears to be the most lightweight while maintaining effective scheduling performance? 
+________________________________________
+Expected Outcome
+The expected outcome of this assignment is a comprehensive comparison of the control-plane overhead introduced by different Kubernetes schedulers. The results should clearly identify:
+•	The CPU and memory footprint of each scheduler. 
+•	The impact of each scheduler on key control-plane components (Scheduler, API Server, Controller Manager, and etcd). 
+•	Whether advanced scheduling strategies incur significant additional overhead compared to the default Kubernetes scheduler. 
+•	A quantitative basis for assessing the efficiency of lightweight scheduler designs, which will directly support the motivation and evaluation of our proposed event-driven scheduler (NEXUS) in the research paper. 
+Important Notes
+•	Ensure that only one scheduler is active during each experiment. 
+•	Use identical cluster configurations, workloads, and monitoring settings for every scheduler to maintain fairness. 
+•	Record all observations systematically and preserve raw metric exports for future validation. 
+•	If any scheduler exhibits unexpected behavior (e.g., scheduling failures, crashes, or excessive resource usage), document these observations along with relevant logs.
+

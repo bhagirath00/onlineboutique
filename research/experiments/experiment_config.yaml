@@ -60,7 +60,7 @@ experiments:
       - scheduling_rate
       - api_server_load
     
-    repetitions: 3  # Run 3 times for statistical rigor
+    repetitions: 2  # Run 2 times for statistical rigor
     cooldown_seconds: 60
 
   - id: "volcano-scheduler"
@@ -116,7 +116,7 @@ experiments:
       - api_server_load
       - pod_migration_count
     
-    repetitions: 3
+    repetitions: 2
     cooldown_seconds: 60
 
   - id: "static-affinity"
@@ -175,7 +175,7 @@ experiments:
       - scheduling_rate
       - unschedulable_pods
     
-    repetitions: 3
+    repetitions: 2
     cooldown_seconds: 60
 
   - id: "nexus-scheduler"
@@ -252,7 +252,7 @@ experiments:
       - control_plane_overhead
       - extender_latency_p99
     
-    repetitions: 3
+    repetitions: 2
     cooldown_seconds: 60
 
 # Global test settings

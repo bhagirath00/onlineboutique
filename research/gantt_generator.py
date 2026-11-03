@@ -250,10 +250,10 @@ def generate_gantt_chart(
     
     # Save
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"✅ Gantt chart saved to: {output_path}")
+    print(f"Gantt chart saved to: {output_path}")
     
     # Print statistics
-    print("\n📊 Scheduling Statistics:")
+    print("\nScheduling Statistics:")
     print("-" * 50)
     
     scheduling_times = [p.scheduling_duration for p in valid_pods if p.scheduling_duration is not None]
@@ -261,15 +261,15 @@ def generate_gantt_chart(
     total_times = [p.total_duration for p in valid_pods if p.total_duration is not None]
     
     if scheduling_times:
-        print(f"Scheduling Latency (creation → scheduled):")
+        print(f"Scheduling Latency (creation -> scheduled):")
         print(f"  Min: {min(scheduling_times):.2f}s | Max: {max(scheduling_times):.2f}s | Avg: {sum(scheduling_times)/len(scheduling_times):.2f}s")
     
     if startup_times:
-        print(f"Container Startup (scheduled → running):")
+        print(f"Container Startup (scheduled -> running):")
         print(f"  Min: {min(startup_times):.2f}s | Max: {max(startup_times):.2f}s | Avg: {sum(startup_times)/len(startup_times):.2f}s")
     
     if total_times:
-        print(f"Total Pod Startup (creation → running):")
+        print(f"Total Pod Startup (creation -> running):")
         print(f"  Min: {min(total_times):.2f}s | Max: {max(total_times):.2f}s | Avg: {sum(total_times)/len(total_times):.2f}s")
     
     print(f"\nTotal pods analyzed: {len(valid_pods)}")
@@ -309,11 +309,11 @@ def main():
     
     # Collect or load events
     if args.collect:
-        print(f"📡 Collecting events from namespace: {args.namespace}")
+        print(f"Collecting events from namespace: {args.namespace}")
         events_data = collect_events_from_kubectl(args.namespace)
         pods_data = collect_pods_from_kubectl(args.namespace)
     elif args.events:
-        print(f"📂 Loading events from: {args.events}")
+        print(f"Loading events from: {args.events}")
         with open(args.events, 'r') as f:
             events_data = json.load(f)
         pods_data = None
@@ -327,7 +327,7 @@ def main():
     
     # Parse events
     pods = parse_events(events_data, pods_data)
-    print(f"📋 Found {len(pods)} pods")
+    print(f"Found {len(pods)} pods")
     
     # Generate chart
     generate_gantt_chart(pods, args.output, args.title, args.scheduler)
