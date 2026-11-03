@@ -2,23 +2,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="768" viewBox="0 0 1024 768">
   <defs>
     <style>
-      /*
-        No background fill (transparent).
-        Use currentColor so it matches GitHub light/dark themes.
-        Keep a simple, clean "microservices diagram" style.
-      */
-      .stroke { stroke: currentColor; fill: none; stroke-width: 3; }
-      .strokeThin { stroke: currentColor; fill: none; stroke-width: 2; }
-      .dash { stroke: currentColor; fill: none; stroke-width: 3; stroke-dasharray: 10 10; }
-      .dashThin { stroke: currentColor; fill: none; stroke-width: 2; stroke-dasharray: 8 8; }
-      .text { fill: currentColor; font-family: Arial, Helvetica, sans-serif; }
-      .title { font-size: 22px; }
+      :root {
+        --fg: #1f2328;
+        --box-bg: #ffffff;
+        --dash-outer: #57606a;
+        --dash-inner: #afb8c1;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #f0f6fc;
+          --box-bg: #161b22;
+          --dash-outer: #8b949e;
+          --dash-inner: #6e7681;
+        }
+      }
+      .stroke { stroke: var(--fg); fill: none; stroke-width: 2.5; }
+      .strokeThin { stroke: var(--fg); fill: none; stroke-width: 1.8; opacity: 0.9; }
+      .dash { stroke: var(--dash-outer); fill: none; stroke-width: 2.5; stroke-dasharray: 10 10; }
+      .dashThin { stroke: var(--dash-inner); fill: none; stroke-width: 2; stroke-dasharray: 8 8; }
+      .text { fill: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-weight: 500; }
+      .title { font-size: 22px; font-weight: 600; }
       .label { font-size: 16px; }
-      .box { stroke: currentColor; fill: none; stroke-width: 3; rx: 10; ry: 10; }
+      .box { stroke: var(--fg); fill: var(--box-bg); stroke-width: 2.5; rx: 10; ry: 10; }
+      .arrow { fill: var(--fg); }
     </style>
 
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L10,5 L0,10" fill="currentColor" />
+      <path class="arrow" d="M0,0 L10,5 L0,10" />
     </marker>
   </defs>
 
@@ -28,7 +38,7 @@
   <text class="text label" x="512" y="65" text-anchor="middle">(CI/CD)</text>
   <line class="stroke" x1="512" y1="80" x2="512" y2="115" marker-end="url(#arrow)" />
 
-  <!-- AWS EKS boundary (dashed), similar framing to the original diagram -->
+  <!-- AWS EKS boundary (dashed) -->
   <rect class="dash" x="180" y="125" width="664" height="560" rx="18" ry="18" />
   <text class="text title" x="512" y="160" text-anchor="middle">AWS EKS</text>
   <rect class="dashThin" x="225" y="175" width="574" height="490" rx="16" ry="16" />
@@ -42,7 +52,7 @@
   <text class="text label" x="925" y="360" text-anchor="middle">Monitoring Stack</text>
   <text class="text label" x="925" y="382" text-anchor="middle">(Prometheus/Grafana)</text>
 
-  <!-- Core services laid out like the original 11-microservice diagram (clean spacing) -->
+  <!-- Core services -->
   <rect class="box" x="320" y="210" width="170" height="55" />
   <text class="text label" x="405" y="244" text-anchor="middle">EmailService</text>
 
@@ -58,12 +68,11 @@
   <rect class="box" x="300" y="345" width="180" height="55" />
   <text class="text label" x="390" y="379" text-anchor="middle">Frontend</text>
 
-  <!-- Redis cache (simple cylinder) -->
-  <ellipse class="stroke" cx="705" cy="395" rx="75" ry="16" />
-  <path class="stroke" d="M630,395 L630,470" />
-  <path class="stroke" d="M780,395 L780,470" />
-  <ellipse class="stroke" cx="705" cy="470" rx="75" ry="16" />
-  <text class="text label" x="705" y="435" text-anchor="middle">Cache (redis)</text>
+  <!-- Redis cache (cylinder) -->
+  <path class="box" d="M630,395 L630,470 A75,16 0 0,0 780,470 L780,395 Z" />
+  <ellipse class="box" cx="705" cy="395" rx="75" ry="16" />
+  <path class="stroke" d="M630,470 A75,16 0 0,0 780,470" />
+  <text class="text label" x="705" y="440" text-anchor="middle">Cache (redis)</text>
 
   <rect class="box" x="300" y="420" width="200" height="55" />
   <text class="text label" x="400" y="454" text-anchor="middle">ShippingService</text>
@@ -80,7 +89,7 @@
   <rect class="box" x="680" y="580" width="280" height="55" />
   <text class="text label" x="820" y="614" text-anchor="middle">RecommendationService</text>
 
-  <!-- Minimal arrows (avoid the "spaghetti" issue) -->
+  <!-- Connection arrows -->
   <!-- Locust -> Frontend -->
   <line class="stroke" x1="210" y1="365" x2="300" y2="373" marker-end="url(#arrow)" />
 
@@ -100,8 +109,7 @@
   <!-- CartService -> Cache -->
   <line class="strokeThin" x1="705" y1="340" x2="705" y2="379" marker-end="url(#arrow)" />
 
-  <!-- EKS -> Monitoring (single clean arrow) -->
-  <line class="stroke" x1="844" y1="365" x2="840" y2="365" />
+  <!-- EKS -> Monitoring -->
   <line class="stroke" x1="799" y1="405" x2="840" y2="370" marker-end="url(#arrow)" />
 
 </svg>

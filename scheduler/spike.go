@@ -60,7 +60,7 @@ func NewSpikeDetector(clientset *kubernetes.Clientset) *SpikeDetector {
 		prometheusURL = "http://prometheus-server.monitoring.svc.cluster.local:80"
 	}
 
-	qpsThreshold := 100.0
+	qpsThreshold := 90.0
 	if qpsStr := os.Getenv("SPIKE_QPS_THRESHOLD"); qpsStr != "" {
 		if val, err := strconv.ParseFloat(qpsStr, 64); err == nil {
 			qpsThreshold = val
@@ -127,8 +127,8 @@ func (sd *SpikeDetector) Detect(pendingPodCount int) bool {
 		qps, err := sd.queryQPS()
 		if err != nil {
 			klog.Warningf("Failed to query QPS: %v", err)
-		} else if qps > sd.qpsThreshold {
-			klog.Infof("SPIKE DETECTED: QPS %.2f > threshold %.2f", qps, sd.qpsThreshold)
+		} else if qps >= sd.qpsThreshold {
+			klog.Infof("SPIKE DETECTED: QPS %.2f >= threshold %.2f", qps, sd.qpsThreshold)
 			return true
 		}
 
@@ -192,28 +192,36 @@ func (sd *SpikeDetector) isPrometheusReachable() bool {
 
 // queryQPS retrieves the current request rate
 func (sd *SpikeDetector) queryQPS() (float64, error) {
-	// 1. PRIMARY: Query Locust stats directly — most accurate real-time RPS
-	resp, err := sd.client.Get("http://locust.nexus-system.svc.cluster.local:8089/stats/requests")
-	if err == nil {
-		defer resp.Body.Close()
-		var stats struct {
-			Stats []struct {
-				Name       string  `json:"name"`
-				CurrentRps float64 `json:"current_rps"`
-			} `json:"stats"`
-		}
-		if decodeErr := json.NewDecoder(resp.Body).Decode(&stats); decodeErr == nil {
-			for _, s := range stats.Stats {
-				if s.Name == "Total" && s.CurrentRps > 0 {
-					klog.Infof("NEXUS-QPS: %.2f RPS from Locust", s.CurrentRps)
-					return s.CurrentRps, nil
+	// 1. PRIMARY: Query Locust stats directly from all candidate cluster URLs
+	locustURLs := []string{
+		"http://loadgenerator.default.svc.cluster.local:8089/stats/requests",
+		"http://locust.nexus-system.svc.cluster.local:8089/stats/requests",
+		"http://localhost:8089/stats/requests",
+	}
+
+	for _, locustURL := range locustURLs {
+		resp, err := sd.client.Get(locustURL)
+		if err == nil {
+			defer resp.Body.Close()
+			var stats struct {
+				Stats []struct {
+					Name       string  `json:"name"`
+					CurrentRps float64 `json:"current_rps"`
+				} `json:"stats"`
+			}
+			if decodeErr := json.NewDecoder(resp.Body).Decode(&stats); decodeErr == nil {
+				for _, s := range stats.Stats {
+					if s.Name == "Total" && s.CurrentRps > 0 {
+						klog.Infof("NEXUS-QPS: %.2f RPS from Locust (%s)", s.CurrentRps, locustURL)
+						return s.CurrentRps, nil
+					}
 				}
 			}
 		}
 	}
 
-	// 2. FALLBACK: Prometheus CPU proxy (when Locust is unreachable)
-	query := `sum(rate(container_cpu_usage_seconds_total{namespace="default",pod=~"frontend-.*",container="server"}[1m])) * 400`
+	// 2. FALLBACK: Prometheus CPU proxy for default namespace frontend pods
+	query := `sum(rate(container_cpu_usage_seconds_total{namespace="default",pod=~"frontend-.*"}[1m])) * 400`
 	val, err := sd.queryPrometheus(query)
 	if err == nil && val > 0.01 {
 		klog.Infof("NEXUS-QPS-FALLBACK: %.2f from Prometheus CPU proxy", val)
@@ -225,52 +233,66 @@ func (sd *SpikeDetector) queryQPS() (float64, error) {
 
 // queryErrorRate retrieves the current error rate
 func (sd *SpikeDetector) queryErrorRate() (float64, error) {
+	query := `sum(rate(apiserver_request_total{code=~"5.."}[1m]))`
+	val, err := sd.queryPrometheus(query)
+	if err == nil {
+		return val, nil
+	}
 	return 0, nil
 }
 
 // queryP95Latency retrieves the p95 request latency in milliseconds
 func (sd *SpikeDetector) queryP95Latency() (float64, error) {
-	// 1. PRIMARY: Query Locust stats directly — real measured p95
-	resp, err := sd.client.Get("http://locust.nexus-system.svc.cluster.local:8089/stats/requests")
-	if err == nil {
-		defer resp.Body.Close()
-		var stats struct {
-			Stats []struct {
-				Name                     string  `json:"name"`
-				ResponseTimePercentile95 float64 `json:"response_time_percentile_95"`
-				AvgResponseTime          float64 `json:"avg_response_time"`
-			} `json:"stats"`
-		}
-		if decodeErr := json.NewDecoder(resp.Body).Decode(&stats); decodeErr == nil {
-			for _, s := range stats.Stats {
-				if s.Name == "Total" {
-					v := s.ResponseTimePercentile95
-					if v == 0 {
-						v = s.AvgResponseTime * 1.5
-					}
-					if v > 0 {
-						klog.Infof("NEXUS-P95: %.2fms from Locust", v)
-						return v, nil
+	// 1. PRIMARY: Query Locust stats directly
+	locustURLs := []string{
+		"http://loadgenerator.default.svc.cluster.local:8089/stats/requests",
+		"http://locust.nexus-system.svc.cluster.local:8089/stats/requests",
+		"http://localhost:8089/stats/requests",
+	}
+
+	for _, locustURL := range locustURLs {
+		resp, err := sd.client.Get(locustURL)
+		if err == nil {
+			defer resp.Body.Close()
+			var stats struct {
+				Stats []struct {
+					Name                     string  `json:"name"`
+					ResponseTimePercentile95 float64 `json:"response_time_percentile_95"`
+					AvgResponseTime          float64 `json:"avg_response_time"`
+				} `json:"stats"`
+			}
+			if decodeErr := json.NewDecoder(resp.Body).Decode(&stats); decodeErr == nil {
+				for _, s := range stats.Stats {
+					if s.Name == "Total" {
+						v := s.ResponseTimePercentile95
+						if v == 0 {
+							v = s.AvgResponseTime * 1.5
+						}
+						if v > 0 {
+							klog.Infof("NEXUS-P95: %.2fms from Locust (%s)", v, locustURL)
+							return v, nil
+						}
 					}
 				}
 			}
 		}
 	}
 
-	// 2. FALLBACK: Prometheus CPU proxy (when Locust is unreachable)
-	query := `sum(rate(container_cpu_usage_seconds_total{namespace="default",pod=~"frontend-.*",container="server"}[1m])) * 2000`
+	// 2. FALLBACK: Prometheus API Server Latency P95
+	query := `histogram_quantile(0.95, sum(rate(apiserver_request_duration_seconds_bucket[1m])) by (le)) * 1000`
 	val, err := sd.queryPrometheus(query)
 	if err == nil && val > 0.01 {
-		klog.Infof("NEXUS-P95-FALLBACK: %.2fms from Prometheus CPU proxy", val)
+		klog.Infof("NEXUS-P95-FALLBACK: %.2fms from Prometheus", val)
 		return val, nil
 	}
 
 	return 0, nil
 }
 
+
 // checkHPAActivity checks if any HPA has recently scaled up
 func (sd *SpikeDetector) checkHPAActivity() (bool, error) {
-	query := "increase(kube_horizontalpodautoscaler_status_current_replicas[2m])"
+	query := "increase(kube_horizontalpodautoscaler_status_current_replicas[1m])"
 	value, err := sd.queryPrometheus(query)
 	if err != nil {
 		return false, err

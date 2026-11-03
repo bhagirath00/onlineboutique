@@ -98,7 +98,8 @@ spec:
       serviceAccountName: nexus-scheduler
       containers:
         - name: nexus-scheduler
-          image: 335169716512.dkr.ecr.us-east-1.amazonaws.com/nexus-scheduler:latest
+          image: 048364544192.dkr.ecr.us-east-1.amazonaws.com/nexus-scheduler:latest
+
           imagePullPolicy: Always
           ports:
             - containerPort: 9099
@@ -106,11 +107,11 @@ spec:
               protocol: TCP
           env:
             - name: PROMETHEUS_URL
-              value: "http://prometheus-server.monitoring.svc.cluster.local:80"
+              value: "http://prometheus-server.monitoring.svc.cluster.local:8080"
             - name: STANDALONE_SCHEDULER_ENABLED
               value: "true"
             - name: SPIKE_QPS_THRESHOLD
-              value: "3"
+              value: "90"
             - name: SPIKE_ERROR_THRESHOLD
               value: "50"
             - name: SPIKE_P95_LATENCY_THRESHOLD

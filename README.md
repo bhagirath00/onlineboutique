@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="src/frontend/static/icons/Hipster_HeroLogo.svg" width="400" alt="Online Boutique" />
+  <img src="src/frontend/static/icons/Hipster_HeroLogo.svg" width="220" alt="Online Boutique" />
 </p>
 
 <p align="center">
-  <img alt="AWS" src="https://img.shields.io/badge/AWS-Cloud-232F3E?logo=amazonaws&logoColor=white" />
-  <img alt="Amazon EKS" src="https://img.shields.io/badge/EKS-Kubernetes-FF9900?logo=amazoneks&logoColor=white" />
-  <img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-Orchestration-326CE5?logo=kubernetes&logoColor=white" />
-  <img alt="Terraform" src="https://img.shields.io/badge/Terraform-IaC-844FBA?logo=terraform&logoColor=white" />
+  <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/AWS-Cloud.svg?variant=outline&amp;mode=dark&amp;font=geist&amp;logo=amazonaws" /><img alt="AWS Cloud" src="https://shieldcn.dev/badge/AWS-Cloud.svg?variant=outline&amp;mode=light&amp;font=geist&amp;logo=amazonaws" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/EKS-Kubernetes.svg?variant=outline&amp;mode=dark&amp;font=geist&amp;logo=amazoneks" /><img alt="EKS Kubernetes" src="https://shieldcn.dev/badge/EKS-Kubernetes.svg?variant=outline&amp;mode=light&amp;font=geist&amp;logo=amazoneks" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Kubernetes-Orchestration.svg?variant=outline&amp;mode=dark&amp;font=geist&amp;logo=kubernetes" /><img alt="Kubernetes Orchestration" src="https://shieldcn.dev/badge/Kubernetes-Orchestration.svg?variant=outline&amp;mode=light&amp;font=geist&amp;logo=kubernetes" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/badge/Terraform-IaC.svg?variant=outline&amp;mode=dark&amp;font=geist&amp;logo=terraform" /><img alt="Terraform IaC" src="https://shieldcn.dev/badge/Terraform-IaC.svg?variant=outline&amp;mode=light&amp;font=geist&amp;logo=terraform" /></picture>
 </p>
 
 **Online Boutique** is a cloud-native microservices demo application (a fork of GoogleCloudPlatform/microservices-demo).
@@ -122,7 +122,10 @@ This shows the core 11-service application design.
 
 This shows how the same services fit into an AWS EKS + DevOps workflow (CI/CD, load testing, monitoring).
 
-[![Architecture of microservices (DevOps / AWS EKS)](./docs/img/architecture-diagram.svg)](./docs/img/architecture-diagram.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/img/architecture-diagram-dark.svg" />
+  <img alt="Architecture of microservices (DevOps / AWS EKS)" src="./docs/img/architecture-diagram-light.svg" />
+</picture>
 
 Find **Protocol Buffers Descriptions** at the [`./pb` directory](./pb).
 
