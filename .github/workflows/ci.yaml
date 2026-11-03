@@ -28,7 +28,7 @@ jobs:
       - name: Build Cart Service
         uses: docker/build-push-action@v5
         with:
-          context: ./src/cartservice
+          context: ./src/cartservice/src
           push: false
           tags: onlineboutique/cartservice:test
           cache-from: type=gha
